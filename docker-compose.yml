@@ -1,0 +1,144 @@
+version: '3.7'
+
+services:
+  traefik:
+    image: traefik:v2.5
+    command:
+      - "--api.insecure=true" # For testing purposes only
+      - "--providers.docker=true"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.dnsChallenge.provider=cloudflare"
+      - "--certificatesresolvers.myresolver.acme.email=${TRAEFIK_EMAIL}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--entrypoints.websecure.http.middlewares=authelia@docker"
+    ports:
+      - "443:443"
+    environment:
+      - CF_API_EMAIL=${CLOUDFLARE_EMAIL}
+      - CF_API_KEY=${CLOUDFLARE_API_KEY}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./letsencrypt:/letsencrypt
+    labels:
+      - "traefik.http.routers.api.rule=Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.api.service=api@internal"
+      - "traefik.http.routers.api.middlewares=authelia@docker"
+
+  authelia:
+    image: authelia/authelia
+    volumes:
+      - ./authelia:/config
+    environment:
+      - TZ=Europe/London
+    labels:
+      - "traefik.http.routers.authelia.rule=Host(`auth.${DOMAIN}`)"
+      - "traefik.http.routers.authelia.entrypoints=websecure"
+      - "traefik.http.services.authelia.loadbalancer.server.port=9091"
+      - "traefik.http.routers.authelia.tls.certresolver=myresolver"
+
+  adguard:
+    image: adguard/adguardhome
+    volumes:
+      - ./adguard/work:/opt/adguardhome/work
+      - ./adguard/conf:/opt/adguardhome/conf
+    labels:
+      - "traefik.http.routers.adguard.rule=Host(`adguard.${DOMAIN}`)"
+      - "traefik.http.routers.adguard.entrypoints=websecure"
+      - "traefik.http.services.adguard.loadbalancer.server.port=3000"
+      - "traefik.http.routers.adguard.tls.certresolver=myresolver"
+
+  asterisk:
+    image: asterisk/asterisk
+    ports:
+      - "5060:5060"
+      - "5060-5061:5060-5061/udp"
+    labels:
+      - "traefik.http.routers.asterisk.rule=Host(`asterisk.${DOMAIN}`)"
+      - "traefik.http.routers.asterisk.entrypoints=websecure"
+      - "traefik.http.services.asterisk.loadbalancer.server.port=8088"
+      - "traefik.http.routers.asterisk.tls.certresolver=myresolver"
+
+  flexget:
+    image: flexget/flexget
+    volumes:
+      - ./flexget:/config
+    labels:
+      - "traefik.http.routers.flexget.rule=Host(`flexget.${DOMAIN}`)"
+      - "traefik.http.routers.flexget.entrypoints=websecure"
+      - "traefik.http.services.flexget.loadbalancer.server.port=3539"
+      - "traefik.http.routers.flexget.tls.certresolver=myresolver"
+
+  homeassistant:
+    image: homeassistant/home-assistant
+    volumes:
+      - ./homeassistant:/config
+    labels:
+      - "traefik.http.routers.homeassistant.rule=Host(`homeassistant.${DOMAIN}`)"
+      - "traefik.http.routers.homeassistant.entrypoints=websecure"
+      - "traefik.http.services.homeassistant.loadbalancer.server.port=8123"
+      - "traefik.http.routers.homeassistant.tls.certresolver=myresolver"
+
+  nextcloud:
+    image: nextcloud
+    volumes:
+      - ./nextcloud:/var/www/html
+    labels:
+      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.${DOMAIN}`)"
+      - "traefik.http.routers.nextcloud.entrypoints=websecure"
+      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
+      - "traefik.http.routers.nextcloud.tls.certresolver=myresolver"
+
+  uptimekuma:
+    image: louislam/uptime-kuma
+    volumes:
+      - ./uptimekuma:/app/data
+    labels:
+      - "traefik.http.routers.uptimekuma.rule=Host(`uptimekuma.${DOMAIN}`)"
+      - "traefik.http.routers.uptimekuma.entrypoints=websecure"
+      - "traefik.http.services.uptimekuma.loadbalancer.server.port=3001"
+      - "traefik.http.routers.uptimekuma.tls.certresolver=myresolver"
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus:/etc/prometheus
+    labels:
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN}`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+      - "traefik.http.routers.prometheus.tls.certresolver=myresolver"
+
+  vaultwarden:
+    image: vaultwarden/server
+    volumes:
+      - ./vaultwarden:/data
+    labels:
+      - "traefik.http.routers.vaultwarden.rule=Host(`vaultwarden.${DOMAIN}`)"
+      - "traefik.http.routers.vaultwarden.entrypoints=websecure"
+      - "traefik.http.services.vaultwarden.loadbalancer.server.port=80"
+      - "traefik.http.routers.vaultwarden.tls.certresolver=myresolver"
+
+  grafana:
+    image: grafana/grafana
+    volumes:
+      - ./grafana:/var/lib/grafana
+    labels:
+      - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "traefik.http.routers.grafana.tls.certresolver=myresolver"
+
+  promtail:
+    image: grafana/promtail
+    volumes:
+      - ./promtail:/etc/promtail
+    labels:
+      - "traefik.http.routers.promtail.rule=Host(`promtail.${DOMAIN}`)"
+      - "traefik.http.routers.promtail.entrypoints=websecure"
+      - "traefik.http.services.promtail.loadbalancer.server.port=1514"
+      - "traefik.http.routers.promtail.tls.certresolver=myresolver"
+
+networks:
+  default:
+    external:
+      name: traefik
